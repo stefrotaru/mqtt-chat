@@ -8,17 +8,16 @@ import (
 )
 
 func main() {
-	opts := mqtt.NewClientOptions().AddBroker("broker.hivemq.com:1883")
-	opts.SetClientID("go-simple")
-	// opts.SetDefaultPublishHandler()
-	opts.SetCleanSession(true)
-
 	var displayName string
 	if len(os.Args) > 1 {
 		displayName = os.Args[1]
 	} else {
 		displayName = "go-simple"
 	}
+
+	opts := mqtt.NewClientOptions().AddBroker("0.0.0.0:1883")
+	opts.SetClientID(displayName)
+	opts.SetCleanSession(true)
 	
 	// define a function for the default message handler that prints to console
 	var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
