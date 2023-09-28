@@ -7,22 +7,31 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// implement nqtt client to subscribe to a topic
-
 func main() {
 	opts := mqtt.NewClientOptions().AddBroker("broker.hivemq.com:1883")
 	opts.SetClientID("go-simple")
 	// opts.SetDefaultPublishHandler()
 	opts.SetCleanSession(true)
+
+	var displayName string
+	if len(os.Args) > 1 {
+		displayName = os.Args[1]
+	} else {
+		displayName = "go-simple"
+	}
 	
 	// define a function for the default message handler that prints to console
 	var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+		// don't print own messages
+		if msg.Topic() == "topicul_de_miercuri_seara/" + displayName {
+			return
+		}
 		fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
 	}
 
 	// define a function for the default message handler that prints to console
 	var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-		fmt.Println("Connected")
+		fmt.Println(displayName + " Connected")
 	}
 
 	opts.SetDefaultPublishHandler(messagePubHandler)
@@ -38,6 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// keep the main thread alive
-	select {} 
+	// listen for keyboard input and send message to topic
+	for {
+		var text string
+		fmt.Scanln(&text)
+		token := c.Publish("topicul_de_miercuri_seara/" + displayName, 0, false, text) 
+		token.Wait()
+	}
 }
