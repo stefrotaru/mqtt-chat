@@ -19,3 +19,7 @@
 
 # Go workspace file
 go.work
+
+# Mosquitto docker data and logs
+mosquitto/data/
+mosquitto/log/
