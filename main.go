@@ -11,17 +11,34 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type message struct {
+type Message interface {
+	formatMessage() string
+}
+
+type TextMessage struct {
 	user string
 	text string
 	sentAt time.Time
+}
+
+func (m TextMessage) formatMessage() string {
+	return fmt.Sprintf("%s [%s]: %s", m.user, m.sentAt.Format("15:04:05"), m.text)
+}
+
+type ActionMessage struct {
+	user string
+	text string
+}
+
+func (m ActionMessage) formatMessage() string {
+	return fmt.Sprintf("%s %s", m.user, m.text)
 }
 
 type model struct {
 	topic	  string
 	name	  string
 	client    mqtt.Client
-	messages  []message
+	messages  []Message
 	textInput textinput.Model
 	cursor    int
 }
@@ -38,7 +55,7 @@ func initialModel(topic string, name string, client mqtt.Client) model {
 		topic: topic,
 		name: name,
 		client: client,
-		messages: []message{},
+		messages: []Message{},
 		textInput: ti,
 		cursor:  0,
 	}
@@ -60,25 +77,87 @@ func (m model) Init() tea.Cmd {
     return textinput.Blink
 }
 
+type CmdDecorator func() tea.Cmd
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	commands := map[string]CmdDecorator {
+		"/quit": func() tea.Cmd {
+			return tea.Quit
+		},
+		"/hello": func() tea.Cmd {
+			action := ActionMessage{
+				user: m.name,
+				text: "says hello!",
+			}
+			token := m.client.Publish(m.topic + m.name, 0, false, action)
+			token.Wait()
+			m.textInput.SetValue("")
+			return nil
+		},
+	}
 
     switch msg := msg.(type) {
     case tea.KeyMsg:
         switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
+			action := ActionMessage{
+				user: m.name,
+				text: "left the chat",
+			}
+			token := m.client.Publish(m.topic + m.name, 0, false, action)
+			token.Wait()
+
 			return m, tea.Quit
+		case tea.KeyTab:
+			// check if input field start with slash
+			selectedCmd := ""
+			if strings.HasPrefix(m.textInput.Value(), "/") {
+				for k := range commands {
+					if strings.HasPrefix(k, m.textInput.Value()) {
+						if selectedCmd == "" {
+							selectedCmd = k
+						} else {
+							selectedCmd = ""
+							break
+						}
+					}
+				}
+			}
+			if selectedCmd != "" {
+				m.textInput.SetValue(selectedCmd)
+				m.textInput.CursorEnd()
+			}
+			return m, nil
 		case tea.KeyEnter:
+			textInput := m.textInput.Value()
+			if textInput[0] == '/' {
+				if cmd, ok := commands[textInput]; ok {
+					return m, cmd()
+				} else {
+					// Print "no such command" action message
+					m.messages = append(m.messages, ActionMessage{
+						user: "Interface:",
+						text: "The command " + textInput[1:] + " does not exist!",
+					})
+					m.textInput.SetValue("")
+					return m, nil
+				}
+			}
+
+			// TODO: send Action Message/TextMessage instead of string as payload. Use encoding: JSON?
 			token := m.client.Publish(m.topic + m.name, 0, false, m.textInput.Value())
 			token.Wait()
 			m.textInput.SetValue("")
+
 			return m, nil
 		}
     }
 
 	select {
 	case msg := <-received:
-		m.messages = append(m.messages, message{
+		m.messages = append(m.messages, TextMessage{
 			user: strings.Split(msg.Topic(), "/")[1],
 			text: string(msg.Payload()),
 			sentAt: time.Now(),
@@ -96,7 +175,7 @@ func (m model) View() string {
     // Iterate over messages
     for _, msg := range m.messages {
         // Render the row
-        s += fmt.Sprintf("%s [%s]: %s\n", msg.user, msg.sentAt.Format("15:04:05"), msg.text)
+        s += msg.formatMessage() + "\n"
     }
 
     // The footer
